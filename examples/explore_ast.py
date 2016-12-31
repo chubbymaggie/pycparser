@@ -9,7 +9,7 @@
 # information from the AST.
 # It helps to have the pycparser/_c_ast.cfg file in front of you.
 #
-# Copyright (C) 2008-2013, Eli Bendersky
+# Copyright (C) 2008-2015, Eli Bendersky
 # License: BSD
 #-----------------------------------------------------------------
 from __future__ import print_function
@@ -143,7 +143,7 @@ while_cond = while_stmt.cond
 # left and right nodes as children. It also has the op attribute,
 # which is just the string representation of the operator.
 #
-#~ print while_cond.op
+#~ print(while_cond.op)
 #~ while_cond.left.show()
 #~ while_cond.right.show()
 
