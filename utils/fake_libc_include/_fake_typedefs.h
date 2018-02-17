@@ -152,4 +152,22 @@ typedef _Bool bool;
 
 typedef int va_list;
 
+/* Mir typedefs */
+typedef void* MirEGLNativeWindowType;
+typedef void* MirEGLNativeDisplayType;
+typedef struct MirConnection MirConnection;
+typedef struct MirSurface MirSurface;
+typedef struct MirSurfaceSpec MirSurfaceSpec;
+typedef struct MirScreencast MirScreencast;
+typedef struct MirPromptSession MirPromptSession;
+typedef struct MirBufferStream MirBufferStream;
+typedef struct MirPersistentId MirPersistentId;
+typedef struct MirBlob MirBlob;
+typedef struct MirDisplayConfig MirDisplayConfig;
+
+/* xcb typedefs */
+typedef struct xcb_connection_t xcb_connection_t;
+typedef uint32_t xcb_window_t;
+typedef uint32_t xcb_visualid_t;
+
 #endif

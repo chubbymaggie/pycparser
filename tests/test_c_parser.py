@@ -77,6 +77,8 @@ def expand_init(init):
         return ['Constant', init.type, init.value]
     elif typ == ID:
         return ['ID', init.name]
+    elif typ == UnaryOp:
+        return ['UnaryOp', init.op, expand_decl(init.expr)]
 
 
 class TestCParser_base(unittest.TestCase):
@@ -86,10 +88,13 @@ class TestCParser_base(unittest.TestCase):
     def setUp(self):
         self.cparser = _c_parser
 
-    def assert_coord(self, node, line, file=None):
+    def assert_coord(self, node, line, column=None, file=None):
         self.assertEqual(node.coord.line, line)
+        if column is not None:
+            self.assertEqual(node.coord.column, column)
         if file:
             self.assertEqual(node.coord.file, file)
+
 
 
 class TestCParser_fundamentals(TestCParser_base):
@@ -132,10 +137,10 @@ class TestCParser_fundamentals(TestCParser_base):
 
     def test_coords(self):
         """ Tests the "coordinates" of parsed elements - file
-            name and line numbers, with modification insterted by
-            #line directives.
+            name, line and column numbers, with modification
+            insterted by #line directives.
         """
-        self.assert_coord(self.parse('int a;').ext[0], 1)
+        self.assert_coord(self.parse('int a;').ext[0], 1, 5)
 
         t1 = """
         int a;
@@ -143,9 +148,9 @@ class TestCParser_fundamentals(TestCParser_base):
         int c;
         """
         f1 = self.parse(t1, filename='test.c')
-        self.assert_coord(f1.ext[0], 2, 'test.c')
-        self.assert_coord(f1.ext[1], 3, 'test.c')
-        self.assert_coord(f1.ext[2], 6, 'test.c')
+        self.assert_coord(f1.ext[0], 2, 13, 'test.c')
+        self.assert_coord(f1.ext[1], 3, 13, 'test.c')
+        self.assert_coord(f1.ext[2], 6, 13, 'test.c')
 
         t1_1 = '''
         int main() {
@@ -154,8 +159,8 @@ class TestCParser_fundamentals(TestCParser_base):
             return 0;
         }'''
         f1_1 = self.parse(t1_1, filename='test.c')
-        self.assert_coord(f1_1.ext[0].body.block_items[0], 3, 'test.c')
-        self.assert_coord(f1_1.ext[0].body.block_items[1], 4, 'test.c')
+        self.assert_coord(f1_1.ext[0].body.block_items[0], 3, 13, 'test.c')
+        self.assert_coord(f1_1.ext[0].body.block_items[1], 4, 13, 'test.c')
 
         t1_2 = '''
         int main () {
@@ -163,13 +168,13 @@ class TestCParser_fundamentals(TestCParser_base):
         }'''
         f1_2 = self.parse(t1_2, filename='test.c')
         # make sure that the Cast has a coord (issue 23)
-        self.assert_coord(f1_2.ext[0].body.block_items[0].init, 3, 'test.c')
+        self.assert_coord(f1_2.ext[0].body.block_items[0].init, 3, 21, file='test.c')
 
         t2 = """
         #line 99
         int c;
         """
-        self.assert_coord(self.parse(t2).ext[0], 99)
+        self.assert_coord(self.parse(t2).ext[0], 99, 13)
 
         t3 = """
         int dsf;
@@ -178,9 +183,9 @@ class TestCParser_fundamentals(TestCParser_base):
         char d;
         """
         f3 = self.parse(t3, filename='test.c')
-        self.assert_coord(f3.ext[0], 2, 'test.c')
-        self.assert_coord(f3.ext[1], 3, 'test.c')
-        self.assert_coord(f3.ext[2], 3000, 'in.h')
+        self.assert_coord(f3.ext[0], 2, 13, 'test.c')
+        self.assert_coord(f3.ext[1], 3, 14, 'test.c')
+        self.assert_coord(f3.ext[2], 3000, 14, 'in.h')
 
         t4 = """
         #line 20 "restore.h"
@@ -193,17 +198,17 @@ class TestCParser_fundamentals(TestCParser_base):
         char* ro;
         """
         f4 = self.parse(t4, filename='myb.c')
-        self.assert_coord(f4.ext[0], 20, 'restore.h')
-        self.assert_coord(f4.ext[1], 30, 'includes/daween.ph')
-        self.assert_coord(f4.ext[2], 30, 'includes/daween.ph')
-        self.assert_coord(f4.ext[3], 50000, 'includes/daween.ph')
+        self.assert_coord(f4.ext[0], 20, 13, 'restore.h')
+        self.assert_coord(f4.ext[1], 30, 14, 'includes/daween.ph')
+        self.assert_coord(f4.ext[2], 30, 17, 'includes/daween.ph')
+        self.assert_coord(f4.ext[3], 50000, 13, 'includes/daween.ph')
 
         t5 = """
         int
         #line 99
         c;
         """
-        self.assert_coord(self.parse(t5).ext[0], 99)
+        self.assert_coord(self.parse(t5).ext[0], 99, 9)
 
         # coord for ellipsis
         t6 = """
@@ -211,7 +216,7 @@ class TestCParser_fundamentals(TestCParser_base):
                 ...) {
         }"""
         f6 = self.parse(t6, filename='z.c')
-        self.assert_coord(self.parse(t6).ext[0].decl.type.args.params[1], 3)
+        self.assert_coord(self.parse(t6).ext[0].decl.type.args.params[1], 3, 17)
 
     def test_forloop_coord(self):
         t = '''\
@@ -222,9 +227,9 @@ class TestCParser_fundamentals(TestCParser_base):
         '''
         s = self.parse(t, filename='f.c')
         forloop = s.ext[0].body.block_items[0]
-        self.assert_coord(forloop.init, 2, 'f.c')
-        self.assert_coord(forloop.cond, 2, 'f.c')
-        self.assert_coord(forloop.next, 3, 'f.c')
+        self.assert_coord(forloop.init, 2, 13, 'f.c')
+        self.assert_coord(forloop.cond, 2, 26, 'f.c')
+        self.assert_coord(forloop.next, 3, 17, 'f.c')
 
     def test_simple_decls(self):
         self.assertEqual(self.get_decl('int a;'),
@@ -284,6 +289,11 @@ class TestCParser_fundamentals(TestCParser_base):
                         ['ID', 'bar']
                     ],
                 ['TypeDecl', ['IdentifierType', ['int']]]]])
+
+    def test_int128(self):
+        self.assertEqual(self.get_decl('__int128 a;'),
+            ['Decl', 'a', ['TypeDecl', ['IdentifierType', ['__int128']]]])
+
 
     def test_nested_decls(self): # the fun begins
         self.assertEqual(self.get_decl('char** ar2D;'),
@@ -503,7 +513,7 @@ class TestCParser_fundamentals(TestCParser_base):
             """
         compound = self.parse(e).ext[0].body
         self.assertTrue(isinstance(compound, Compound))
-        self.assert_coord(compound, 2, '')
+        self.assert_coord(compound, 2)
 
     # The C99 compound literal feature
     #
@@ -740,8 +750,8 @@ class TestCParser_fundamentals(TestCParser_base):
         """
 
         s7_ast = self.parse(s7, filename='test.c')
-        self.assert_coord(s7_ast.ext[0].type.decls[2], 6, 'test.c')
-        self.assert_coord(s7_ast.ext[0].type.decls[3], 78,
+        self.assert_coord(s7_ast.ext[0].type.decls[2], 6, 22, 'test.c')
+        self.assert_coord(s7_ast.ext[0].type.decls[3], 78, 22,
             r'D:\eli\cpp_stuff\libc_include/sys/reent.h')
 
         s8 = """
@@ -1338,6 +1348,9 @@ class TestCParser_fundamentals(TestCParser_base):
                 for(;;) {}
                 #pragma
             }
+            struct s {
+            #pragma baz
+            } s;
             '''
         s1_ast = self.parse(s1)
         self.assertTrue(isinstance(s1_ast.ext[0], Pragma))
@@ -1351,6 +1364,10 @@ class TestCParser_fundamentals(TestCParser_base):
         self.assertTrue(isinstance(s1_ast.ext[1].body.block_items[2], Pragma))
         self.assertEqual(s1_ast.ext[1].body.block_items[2].string, '')
         self.assertEqual(s1_ast.ext[1].body.block_items[2].coord.line, 6)
+        
+        self.assertTrue(isinstance(s1_ast.ext[2].type.type.decls[0], Pragma))
+        self.assertEqual(s1_ast.ext[2].type.type.decls[0].string, 'baz')
+        self.assertEqual(s1_ast.ext[2].type.type.decls[0].coord.line, 9)
 
 
 class TestCParser_whole_code(TestCParser_base):
@@ -1559,10 +1576,10 @@ class TestCParser_whole_code(TestCParser_base):
         ps1 = self.parse(s1)
         self.assert_num_klass_nodes(ps1, EmptyStatement, 3)
         self.assert_num_klass_nodes(ps1, Return, 1)
-        self.assert_coord(ps1.ext[0].body.block_items[0], 3, '')
-        self.assert_coord(ps1.ext[0].body.block_items[1], 4, '')
-        self.assert_coord(ps1.ext[0].body.block_items[2], 4, '')
-        self.assert_coord(ps1.ext[0].body.block_items[3], 6, '')
+        self.assert_coord(ps1.ext[0].body.block_items[0], 3)
+        self.assert_coord(ps1.ext[0].body.block_items[1], 4)
+        self.assert_coord(ps1.ext[0].body.block_items[2], 4)
+        self.assert_coord(ps1.ext[0].body.block_items[3], 6)
 
     def test_switch_statement(self):
         def assert_case_node(node, const_value):
@@ -1711,7 +1728,7 @@ class TestCParser_whole_code(TestCParser_base):
 
         self.assertTrue(isinstance(p.ext[0], Typedef))
         self.assertEqual(p.ext[0].coord.line, 213)
-        self.assertEqual(p.ext[0].coord.file, "D:\eli\cpp_stuff\libc_include/stddef.h")
+        self.assertEqual(p.ext[0].coord.file, r"D:\eli\cpp_stuff\libc_include/stddef.h")
 
         self.assertTrue(isinstance(p.ext[-1], FuncDef))
         self.assertEqual(p.ext[-1].coord.line, 15)
@@ -1749,6 +1766,62 @@ class TestCParser_typenames(TestCParser_base):
             }
             '''
         self.assertTrue(isinstance(self.parse(s2), FileAST))
+
+    def test_ambiguous_parameters(self):
+        # From ISO/IEC 9899:TC2, 6.7.5.3.11:
+        # "If, in a parameter declaration, an identifier can be treated either
+        #  as a typedef name or as a parameter name, it shall be taken as a
+        #  typedef name."
+
+        # foo takes an int named aa
+        # bar takes a function taking a TT
+        s1 = r'''
+        typedef char TT;
+        int foo(int (aa));
+        int bar(int (TT));
+        '''
+        s1_ast = self.parse(s1)
+        self.assertEqual(expand_decl(s1_ast.ext[1].type.args.params[0]),
+            ['Decl', 'aa', ['TypeDecl', ['IdentifierType', ['int']]]])
+        self.assertEqual(expand_decl(s1_ast.ext[2].type.args.params[0]),
+            ['Typename', ['FuncDecl',
+                [['Typename', ['TypeDecl', ['IdentifierType', ['TT']]]]],
+                ['TypeDecl', ['IdentifierType', ['int']]]]])
+
+        # foo takes a function taking a char
+        # bar takes a function taking a function taking a char
+        s2 = r'''
+        typedef char TT;
+        int foo(int (aa (char)));
+        int bar(int (TT (char)));
+        '''
+        s2_ast = self.parse(s2)
+        self.assertEqual(expand_decl(s2_ast.ext[1].type.args.params[0]),
+            ['Decl', 'aa', ['FuncDecl',
+                [['Typename', ['TypeDecl', ['IdentifierType', ['char']]]]],
+                ['TypeDecl', ['IdentifierType', ['int']]]]])
+        self.assertEqual(expand_decl(s2_ast.ext[2].type.args.params[0]),
+            ['Typename', ['FuncDecl',
+                [['Typename', ['FuncDecl',
+                    [['Typename', ['TypeDecl', ['IdentifierType', ['char']]]]],
+                    ['TypeDecl', ['IdentifierType', ['TT']]]]]],
+                ['TypeDecl', ['IdentifierType', ['int']]]]])
+
+
+        # foo takes an int array named aa
+        # bar takes a function taking a TT array
+        s3 = r'''
+        typedef char TT;
+        int foo(int (aa[]));
+        int bar(int (TT[]));
+        '''
+        s3_ast = self.parse(s3)
+        self.assertEqual(expand_decl(s3_ast.ext[1].type.args.params[0]),
+            ['Decl', 'aa', ['ArrayDecl', '', [], ['TypeDecl', ['IdentifierType', ['int']]]]])
+        self.assertEqual(expand_decl(s3_ast.ext[2].type.args.params[0]),
+            ['Typename', ['FuncDecl',
+                [['Typename', ['ArrayDecl', '', [], ['TypeDecl', ['IdentifierType', ['TT']]]]]],
+                ['TypeDecl', ['IdentifierType', ['int']]]]])
 
     def test_innerscope_reuse_typedef_name(self):
         # identifiers can be reused in inner scopes; the original should be
@@ -1817,6 +1890,55 @@ class TestCParser_typenames(TestCParser_base):
             }
             '''
         self.assertRaises(ParseError, self.parse, s5)
+
+        # reusing a type name should work with multiple declarators
+        s6 = r'''
+            typedef char TT;
+            void foo(void) {
+              unsigned TT, uu;
+            }
+            '''
+        s6_ast = self.parse(s6)
+        items = s6_ast.ext[1].body.block_items
+        self.assertEqual(expand_decl(items[0]),
+            ['Decl', 'TT', ['TypeDecl', ['IdentifierType', ['unsigned']]]])
+        self.assertEqual(expand_decl(items[1]),
+            ['Decl', 'uu', ['TypeDecl', ['IdentifierType', ['unsigned']]]])
+
+        # reusing a type name should work after a pointer
+        s7 = r'''
+            typedef char TT;
+            void foo(void) {
+              unsigned * TT;
+            }
+            '''
+        s7_ast = self.parse(s7)
+        items = s7_ast.ext[1].body.block_items
+        self.assertEqual(expand_decl(items[0]),
+            ['Decl', 'TT', ['PtrDecl', ['TypeDecl', ['IdentifierType', ['unsigned']]]]])
+
+        # redefine a name in the middle of a multi-declarator declaration
+        s8 = r'''
+            typedef char TT;
+            void foo(void) {
+                int tt = sizeof(TT), TT, uu = sizeof(TT);
+                int uu = sizeof(tt);
+            }
+            '''
+        s8_ast = self.parse(s8)
+        items = s8_ast.ext[1].body.block_items
+        self.assertEqual(expand_decl(items[0]),
+            ['Decl', 'tt', ['TypeDecl', ['IdentifierType', ['int']]]])
+        self.assertEqual(expand_decl(items[1]),
+            ['Decl', 'TT', ['TypeDecl', ['IdentifierType', ['int']]]])
+        self.assertEqual(expand_decl(items[2]),
+            ['Decl', 'uu', ['TypeDecl', ['IdentifierType', ['int']]]])
+
+        # Don't test this until we have support for it
+        # self.assertEqual(expand_init(items[0].init),
+        #     ['UnaryOp', 'sizeof', ['Typename', ['TypeDecl', ['IdentifierType', ['TT']]]]])
+        # self.assertEqual(expand_init(items[2].init),
+        #     ['UnaryOp', 'sizeof', ['ID', 'TT']])
 
     def test_parameter_reuse_typedef_name(self):
         # identifiers can be reused as parameter names; parameter name scope
